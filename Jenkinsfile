@@ -1,16 +1,16 @@
+
 pipeline {
     agent any
 
     options {
         timestamps()
         disableConcurrentBuilds()
-        skipDefaultCheckout(true)
     }
 
     environment {
         IMAGE_NAME = 'devops-ecommerce:v1'
-        COMPOSE_BIN = '/usr/libexec/docker/cli-plugins/docker-compose'
-        COMPOSE_PROJECT = 'devops-ecommerce-phase1'
+        COMPOSE = '/usr/libexec/docker/cli-plugins/docker-compose'
+        PROJECT_NAME = 'devops-ecommerce-phase1'
     }
 
     stages {
@@ -25,14 +25,10 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-
                     python3 -m venv .ci-venv
                     . .ci-venv/bin/activate
-
                     python -m pip install -r requirements.txt
-
-                    python -m pytest -v \
-                        --junitxml=pytest-results.xml
+                    python -m pytest -v --junitxml=pytest-results.xml
                 '''
             }
         }
@@ -41,11 +37,8 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-
                     docker build -t "$IMAGE_NAME" .
-
-                    docker image inspect "$IMAGE_NAME" \
-                        --format '{{.Id}}'
+                    docker image inspect "$IMAGE_NAME" --format '{{.Id}}'
                 '''
             }
         }
@@ -54,17 +47,14 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-
-                    trivy image \
-                        --scanners vuln \
+                    trivy image --scanners vuln \
                         --severity HIGH,CRITICAL \
                         --exit-code 0 \
                         --format json \
                         --output trivy-report.json \
                         "$IMAGE_NAME"
 
-                    trivy image \
-                        --scanners vuln \
+                    trivy image --scanners vuln \
                         --severity HIGH,CRITICAL \
                         --exit-code 0 \
                         "$IMAGE_NAME"
@@ -82,9 +72,7 @@ pipeline {
                 ]) {
                     sh '''
                         set -eu
-
-                        "$COMPOSE_BIN" \
-                            -p "$COMPOSE_PROJECT" \
+                        "$COMPOSE" -p "$PROJECT_NAME" \
                             -f compose.yaml \
                             up -d --no-build \
                             --force-recreate ecommerce
@@ -93,45 +81,43 @@ pipeline {
             }
         }
 
-        
-stage('Verify Deployment') {
-    steps {
-        withCredentials([
-            string(
-                credentialsId: 'ecommerce-secret-key',
-                variable: 'SECRET_KEY'
-            )
-        ]) {
-            sh '''
-                set -eu
+        stage('Verify Deployment') {
+            steps {
+                withCredentials([
+                    string(
+                        credentialsId: 'ecommerce-secret-key',
+                        variable: 'SECRET_KEY'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+                        attempts=0
 
-                attempts=0
+                        until curl --fail --silent \
+                            http://127.0.0.1:5001/health
+                        do
+                            attempts=$((attempts + 1))
 
-                until curl --fail --silent \
-                    http://127.0.0.1:5001/health
-                do
-                    attempts=$((attempts + 1))
+                            if [ "$attempts" -ge 12 ]; then
+                                echo "Health check failed"
+                                exit 1
+                            fi
 
-                    if [ "$attempts" -ge 12 ]; then
-                        echo "Health check failed"
-                        exit 1
-                    fi
+                            sleep 5
+                        done
 
-                    sleep 5
-                done
+                        echo
+                        echo "Health check successful"
 
-                echo
-                echo "Health endpoint responded successfully"
+                        "$COMPOSE" -p "$PROJECT_NAME" \
+                            -f compose.yaml ps
 
-                /usr/libexec/docker/cli-plugins/docker-compose \
-                    -p devops-ecommerce-phase1 \
-                    -f compose.yaml ps
-
-                echo "Deployment verification successful"
-            '''
+                        echo "Deployment verification successful"
+                    '''
+                }
+            }
         }
     }
-}
 
     post {
         always {
@@ -153,3 +139,4 @@ stage('Verify Deployment') {
         }
     }
 }
+
