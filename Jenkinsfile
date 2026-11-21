@@ -93,36 +93,45 @@ pipeline {
             }
         }
 
-        stage('Verify Deployment') {
-            steps {
-                sh '''
-                    set -eu
+        
+stage('Verify Deployment') {
+    steps {
+        withCredentials([
+            string(
+                credentialsId: 'ecommerce-secret-key',
+                variable: 'SECRET_KEY'
+            )
+        ]) {
+            sh '''
+                set -eu
 
-                    attempts=0
+                attempts=0
 
-                    until curl --fail --silent \
-                        http://127.0.0.1:5001/health
-                    do
-                        attempts=$((attempts + 1))
+                until curl --fail --silent \
+                    http://127.0.0.1:5001/health
+                do
+                    attempts=$((attempts + 1))
 
-                        if [ "$attempts" -ge 12 ]; then
-                            echo "Deployment health check failed"
-                            exit 1
-                        fi
+                    if [ "$attempts" -ge 12 ]; then
+                        echo "Health check failed"
+                        exit 1
+                    fi
 
-                        sleep 5
-                    done
+                    sleep 5
+                done
 
-                    echo
-                    echo "Health endpoint responded successfully"
+                echo
+                echo "Health endpoint responded successfully"
 
-                    "$COMPOSE_BIN" \
-                        -p "$COMPOSE_PROJECT" \
-                        -f compose.yaml ps
-                '''
-            }
+                /usr/libexec/docker/cli-plugins/docker-compose \
+                    -p devops-ecommerce-phase1 \
+                    -f compose.yaml ps
+
+                echo "Deployment verification successful"
+            '''
         }
     }
+}
 
     post {
         always {
