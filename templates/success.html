@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<div class="panel"><h1>✅ Demo order placed!</h1><p>Order #{{ order_id }}</p><p>Total: <strong>{{ total|gbp }}</strong></p><p>No payment has been taken.</p><a href="{{ url_for('home') }}">Back to shop</a></div>{% endblock %}
